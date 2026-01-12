@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import date
 
 st.set_page_config(page_title="Prosty Magazyn", layout="centered")
 
@@ -8,7 +9,14 @@ st.title("📦 Prosty Magazyn")
 # Inicjalizacja danych w sesji
 if "magazyn" not in st.session_state:
     st.session_state.magazyn = pd.DataFrame(
-        columns=["Towar", "Stan aktualny", "Stan docelowy", "Braki"]
+        columns=[
+            "Towar",
+            "Stan aktualny",
+            "Stan docelowy",
+            "Braki",
+            "Cena (zł)",
+            "Data"
+        ]
     )
 
 # =========================
@@ -20,6 +28,8 @@ with st.form("formularz"):
     towar = st.text_input("Nazwa towaru")
     stan_aktualny = st.number_input("Stan aktualny", min_value=0, step=1)
     stan_docelowy = st.number_input("Stan docelowy", min_value=0, step=1)
+    cena = st.number_input("Cena (zł)", min_value=0.0, step=0.01, format="%.2f")
+    data = st.date_input("Data", value=date.today())
     submitted = st.form_submit_button("Zapisz")
 
     if submitted and towar:
@@ -32,7 +42,14 @@ with st.form("formularz"):
 
         # Dodajemy nowy wiersz
         nowy = pd.DataFrame(
-            [[towar, stan_aktualny, stan_docelowy, braki]],
+            [[
+                towar,
+                stan_aktualny,
+                stan_docelowy,
+                braki,
+                cena,
+                data
+            ]],
             columns=st.session_state.magazyn.columns
         )
 
