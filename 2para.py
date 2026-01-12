@@ -11,7 +11,9 @@ if "magazyn" not in st.session_state:
         columns=["Towar", "Stan aktualny", "Stan docelowy", "Braki"]
     )
 
-# Formularz dodawania towaru
+# =========================
+# Dodawanie / aktualizacja
+# =========================
 st.header("➕ Dodaj / zaktualizuj towar")
 
 with st.form("formularz"):
@@ -41,7 +43,9 @@ with st.form("formularz"):
 
         st.success("Towar zapisany")
 
-# Wyświetlenie magazynu
+# =========================
+# Wyświetlanie magazynu
+# =========================
 st.header("📋 Stan magazynu")
 
 if st.session_state.magazyn.empty:
@@ -59,3 +63,22 @@ else:
         st.success("Brak braków magazynowych 🎉")
     else:
         st.dataframe(braki_df, use_container_width=True)
+
+# =========================
+# Usuwanie towaru
+# =========================
+st.header("🗑️ Usuń towar")
+
+if st.session_state.magazyn.empty:
+    st.info("Brak towarów do usunięcia")
+else:
+    towar_do_usuniecia = st.selectbox(
+        "Wybierz towar do usunięcia",
+        st.session_state.magazyn["Towar"]
+    )
+
+    if st.button("Usuń towar"):
+        st.session_state.magazyn = st.session_state.magazyn[
+            st.session_state.magazyn["Towar"] != towar_do_usuniecia
+        ]
+        st.success(f"Usunięto towar: {towar_do_usuniecia}")
