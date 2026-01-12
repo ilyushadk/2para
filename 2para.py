@@ -27,14 +27,18 @@ def pobierz_magazyn():
 def zapisz_towar(towar, stan_aktualny, stan_docelowy, cena, data):
     braki = max(stan_docelowy - stan_aktualny, 0)
 
-    supabase.table("magazyn").upsert({
-        "towar": towar,
-        "stan_aktualny": stan_aktualny,
-        "stan_docelowy": stan_docelowy,
-        "braki": braki,
-        "cena": cena,
-        "data": str(data)
-    }).execute()
+    supabase.table("magazyn").upsert(
+        {
+            "towar": towar,
+            "stan_aktualny": stan_aktualny,
+            "stan_docelowy": stan_docelowy,
+            "braki": braki,
+            "cena": cena,
+            "data": str(data)
+        },
+        on_conflict="towar"
+    ).execute()
+
 
 def usun_towar(towar):
     supabase.table("magazyn").delete().eq("towar", towar).execute()
