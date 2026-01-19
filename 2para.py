@@ -20,8 +20,8 @@ st.title("📦 Prosty Magazyn (Supabase)")
 def init_connection():
     try:
         # Pobieranie danych z sekcji Secrets
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
+        url = st.secrets["https://hfyswxgdjvhofeffxdlb.supabase.co"]
+        key = st.secrets["sb_publishable_xaWA9jQlC8sKyDK3H15v1w_LjZmwbE8"]
         return create_client(url, key)
     except KeyError:
         # Obsługa błędu widocznego na zrzucie ekranu
