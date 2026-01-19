@@ -3,83 +3,74 @@ import pandas as pd
 from supabase import create_client
 import httpx
 
-# Konfiguracja strony
 st.set_page_config(page_title="Prosty Magazyn", page_icon="📦")
 st.title("📦 Prosty Magazyn (Supabase)")
 
-# Połączenie z bazą
 def init_connection():
     try:
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.error(f"❌ Błąd kluczy w Secrets! Sprawdź czy są poprawnie wpisane.")
+        st.error("BŁĄD: Sprawdź formatowanie w Secrets (musi być w jednej linii!)")
         st.stop()
 
 supabase = init_connection()
 
-# Funkcje pobierania danych
 @st.cache_data(ttl=10)
 def pobierz_magazyn():
     try:
-        # Pobieranie produktów i nazwy kategorii przez relację
-        res = supabase.table("produkty").select(
-            "id, nazwa, liczba, cena, Kategorie(nazwa)"
-        ).order("nazwa").execute()
+        # Próba pobrania danych z relacją Kategorie
+        res = supabase.table("produkty").select("id, nazwa, liczba, cena, Kategorie(nazwa)").execute()
         
-        if not res.data:
-            return pd.DataFrame()
-
-        # Spłaszczanie danych dla tabeli
-        rows = []
+        flat_data = []
         for item in res.data:
-            rows.append({
+            flat_data.append({
                 "ID": item["id"],
                 "Produkt": item["nazwa"],
                 "Liczba": item["liczba"],
-                "Cena (zł)": item["cena"],
+                "Cena": item["cena"],
                 "Kategoria": item["Kategorie"]["nazwa"] if item.get("Kategorie") else "Brak"
             })
-        return pd.DataFrame(rows)
+        return pd.DataFrame(flat_data)
     except Exception as e:
-        st.error(f"❌ Brak połączenia z serwerem Supabase.")
+        st.error(f"Błąd bazy danych: {e}")
+        st.info("💡 Wskazówka: Sprawdź czy w Supabase wyłączono RLS lub dodano uprawnienia (Policies).")
         return pd.DataFrame()
 
 @st.cache_data(ttl=10)
 def pobierz_kategorie():
-    res = supabase.table("Kategorie").select("id, nazwa").execute()
-    return pd.DataFrame(res.data)
+    try:
+        res = supabase.table("Kategorie").select("id, nazwa").execute()
+        return pd.DataFrame(res.data)
+    except Exception:
+        return pd.DataFrame()
 
-# Interfejs
-tab1, tab2 = st.tabs(["📋 Widok Magazynu", "➕ Dodaj Nowy"])
+# --- Interfejs ---
+tab1, tab2 = st.tabs(["📋 Widok", "➕ Dodaj"])
 
 with tab1:
-    st.header("Aktualne stany")
     df = pobierz_magazyn()
-    if df.empty:
-        st.info("Magazyn jest pusty lub błąd połączenia.")
-    else:
+    if not df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.warning("Brak danych do wyświetlenia.")
 
 with tab2:
-    st.header("Dodaj produkt")
     kat_df = pobierz_kategorie()
     if kat_df.empty:
-        st.warning("⚠️ Dodaj najpierw kategorie w Supabase!")
+        st.error("Nie można pobrać kategorii. Sprawdź uprawnienia tabeli 'Kategorie' w Supabase.")
     else:
-        with st.form("dodaj"):
-            nazwa = st.text_input("Nazwa produktu")
-            liczba = st.number_input("Ilość", min_value=0, step=1)
-            cena = st.number_input("Cena", min_value=0.0, format="%.2f")
+        with st.form("dodaj_form"):
+            nazwa = st.text_input("Nazwa")
+            liczba = st.number_input("Liczba", step=1)
+            cena = st.number_input("Cena", step=0.01)
             kat_map = dict(zip(kat_df["nazwa"], kat_df["id"]))
-            kat_wybrana = st.selectbox("Kategoria", options=kat_map.keys())
+            wybrana_kat = st.selectbox("Kategoria", options=kat_map.keys())
             
             if st.form_submit_button("Zapisz"):
-                if nazwa:
-                    supabase.table("produkty").insert({
-                        "nazwa": nazwa, "liczba": liczba, 
-                        "cena": cena, "kategoria_id": kat_map[kat_wybrana]
-                    }).execute()
-                    st.cache_data.clear()
-                    st.rerun()
+                supabase.table("produkty").insert({
+                    "nazwa": nazwa, "liczba": liczba, "cena": cena, "kategoria_id": kat_map[wybrana_kat]
+                }).execute()
+                st.cache_data.clear()
+                st.rerun()
