@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
 from supabase import create_client
 
 # =========================
-# STREAMLIT CONFIG
+# 1. KONFIGURACJA STRONY
 # =========================
 st.set_page_config(
     page_title="Prosty Magazyn",
@@ -15,136 +14,130 @@ st.set_page_config(
 st.title("📦 Prosty Magazyn (Supabase)")
 
 # =========================
-# SUPABASE CONFIG
+# 2. POŁĄCZENIE Z SUPABASE
 # =========================
-supabase = create_client(
-    st.secrets["SUPABASE_URL"],
-    st.secrets["SUPABASE_KEY"]
-)
+# Upewnij się, że w Secrets masz: SUPABASE_URL i SUPABASE_KEY
+try:
+    supabase = create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_KEY"]
+    )
+except Exception as e:
+    st.error("Błąd połączenia z bazą danych. Sprawdź Secrets w ustawieniach aplikacji.")
+    st.stop()
 
 # =========================
-# FUNKCJE
+# 3. FUNKCJE OPERACJI NA BAZIE
 # =========================
-@st.cache_data(ttl=10)
-def pobierz_magazyn():
+
+@st.cache_data(ttl=5)
+def pobierz_kategorie():
+    """Pobiera listę dostępnych kategorii ze schematu."""
     try:
-        response = (
-            supabase
-            .table("magazyn")
-            .select("*")
-            .order("towar", desc=False)
-            .execute()
-        )
-
-        if response.data is None:
-            return pd.DataFrame()
-
-        return pd.DataFrame(response.data)
-
+        res = supabase.table("Kategorie").select("id, nazwa").execute()
+        return pd.DataFrame(res.data)
     except Exception as e:
-        st.error(f"Błąd pobierania danych: {e}")
+        st.error(f"Błąd kategorii: {e}")
         return pd.DataFrame()
 
-
-def zapisz_towar(towar, stan_aktualny, stan_docelowy, cena, data):
-    braki = max(int(stan_docelowy) - int(stan_aktualny), 0)
-
+@st.cache_data(ttl=5)
+def pobierz_magazyn():
+    """Pobiera produkty łącząc je z tabelą Kategorie (JOIN)."""
     try:
-        supabase.table("magazyn").upsert(
-            {
-                "towar": towar,
-                "stan_aktualny": int(stan_aktualny),
-                "stan_docelowy": int(stan_docelowy),
-                "braki": braki,
-                "cena": float(cena),
-                "data": data.isoformat()
-            },
-            on_conflict="towar"
-        ).execute()
+        # Pobieramy produkty i dołączamy nazwę kategorii przez klucz obcy kategoria_id
+        res = supabase.table("produkty").select(
+            "id, nazwa, liczba, cena, kategoria_id, Kategorie(nazwa)"
+        ).order("nazwa").execute()
+        
+        if not res.data:
+            return pd.DataFrame()
 
+        # Przetwarzanie zagnieżdżonych danych z relacji
+        dane = []
+        for item in res.data:
+            dane.append({
+                "ID": item["id"],
+                "Produkt": item["nazwa"],
+                "Liczba": item["liczba"],
+                "Cena (zł)": item["cena"],
+                "Kategoria": item["Kategorie"]["nazwa"] if item["Kategorie"] else "Brak"
+            })
+        return pd.DataFrame(dane)
+    except Exception as e:
+        st.error(f"Błąd pobierania: {e}")
+        return pd.DataFrame()
+
+def dodaj_produkt(nazwa, liczba, cena, kategoria_id):
+    """Wstawia nowy wiersz do tabeli produkty."""
+    try:
+        supabase.table("produkty").insert({
+            "nazwa": nazwa,
+            "liczba": liczba,
+            "cena": cena,
+            "kategoria_id": kategoria_id
+        }).execute()
+        st.success(f"✅ Dodano: {nazwa}")
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"Błąd zapisu: {e}")
 
-
-def usun_towar(towar):
+def usun_produkt(id_produktu):
+    """Usuwa produkt na podstawie klucza głównego ID."""
     try:
-        supabase.table("magazyn").delete().eq("towar", towar).execute()
+        supabase.table("produkty").delete().eq("id", id_produktu).execute()
+        st.success("🗑️ Produkt usunięty")
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"Błąd usuwania: {e}")
 
 # =========================
-# FORMULARZ
+# 4. INTERFEJS UŻYTKOWNIKA
 # =========================
-st.header("➕ Dodaj / zaktualizuj towar")
 
-with st.form("formularz"):
-    towar = st.text_input("Nazwa towaru")
-    stan_aktualny = st.number_input("Stan aktualny", min_value=0, step=1)
-    stan_docelowy = st.number_input("Stan docelowy", min_value=0, step=1)
-    cena = st.number_input("Cena (zł)", min_value=0.0, step=0.01, format="%.2f")
-    data = st.date_input("Data", value=date.today())
+tab1, tab2 = st.tabs(["📋 Widok Magazynu", "➕ Dodaj Produkt"])
 
-    submitted = st.form_submit_button("Zapisz")
-
-    if submitted:
-        if not towar.strip():
-            st.error("❌ Podaj nazwę towaru")
-        else:
-            zapisz_towar(towar, stan_aktualny, stan_docelowy, cena, data)
-            st.success("✅ Towar zapisany")
-            st.cache_data.clear()
+# --- TABELA PRODUKTÓW ---
+with tab1:
+    st.header("Aktualny stan magazynu")
+    df = pobierz_magazyn()
+    
+    if df.empty:
+        st.info("Magazyn jest pusty.")
+    else:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        st.divider()
+        st.subheader("Usuwanie produktu")
+        # Wybór produktu do usunięcia na podstawie ID
+        do_usuniecia = st.selectbox(
+            "Wybierz towar do usunięcia",
+            options=df["ID"].tolist(),
+            format_func=lambda x: df[df["ID"] == x]["Produkt"].iloc[0]
+        )
+        if st.button("Usuń wybrany produkt", type="primary"):
+            usun_produkt(do_usuniecia)
             st.rerun()
 
-# =========================
-# MAGAZYN
-# =========================
-st.header("📋 Stan magazynu")
-
-df = pobierz_magazyn()
-
-if df.empty:
-    st.info("Brak danych w magazynie")
-else:
-    st.dataframe(
-        df[[
-            "towar",
-            "stan_aktualny",
-            "stan_docelowy",
-            "braki",
-            "cena",
-            "data"
-        ]],
-        use_container_width=True,
-        hide_index=True
-    )
-
-    # -------------------------
-    # BRAKI
-    # -------------------------
-    st.subheader("❗ Towary z brakami")
-
-    braki_df = df[df["braki"] > 0]
-
-    if braki_df.empty:
-        st.success("Brak braków magazynowych 🎉")
+# --- FORMULARZ DODAWANIA ---
+with tab2:
+    st.header("Nowy towar")
+    kat_df = pobierz_kategorie()
+    
+    if kat_df.empty:
+        st.warning("⚠️ Brak kategorii w bazie. Dodaj je najpierw w Supabase.")
     else:
-        st.dataframe(braki_df, use_container_width=True, hide_index=True)
-
-# =========================
-# USUWANIE
-# =========================
-st.header("🗑️ Usuń towar")
-
-if df.empty:
-    st.info("Brak towarów do usunięcia")
-else:
-    towar_do_usuniecia = st.selectbox(
-        "Wybierz towar do usunięcia",
-        df["towar"].unique()
-    )
-
-    if st.button("Usuń towar", type="primary"):
-        usun_towar(towar_do_usuniecia)
-        st.success(f"🗑️ Usunięto: {towar_do_usuniecia}")
-        st.cache_data.clear()
-        st.rerun()
+        with st.form("form_dodawania", clear_on_submit=True):
+            nazwa_p = st.text_input("Nazwa produktu")
+            liczba_p = st.number_input("Ilość", min_value=0, step=1)
+            cena_p = st.number_input("Cena za sztukę", min_value=0.0, format="%.2f")
+            
+            # Mapowanie nazw kategorii na ich ID z bazy
+            opcje_kat = dict(zip(kat_df["nazwa"], kat_df["id"]))
+            wybrana_kat = st.selectbox("Kategoria", options=opcje_kat.keys())
+            
+            if st.form_submit_button("Zapisz w bazie"):
+                if nazwa_p:
+                    dodaj_produkt(nazwa_p, liczba_p, cena_p, opcje_kat[wybrana_kat])
+                    st.rerun()
+                else:
+                    st.error("Nazwa nie może być pusta!")
